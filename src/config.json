@@ -1,0 +1,12 @@
+{
+    "port": 3000,
+    "crypto_key": "my key",
+    "postgres": {
+        "host": "something",
+        "port": "something",
+        "user": "something",
+        "password": "something",
+        "db_name": "something",
+        "schema_name": "something"
+    }
+}
