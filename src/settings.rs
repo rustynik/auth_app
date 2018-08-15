@@ -9,8 +9,14 @@ use std::fs::File;
 #[derive(Deserialize, Debug)]
 pub struct ApplicationSettings {
     pub port: u16,
-    pub crypto_key: String,
+    pub password: CryptoSettings,
     pub postgres: PostgresSettings 
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CryptoSettings { 
+    crypto_key: String,
+    salt: String
 }
 
 #[derive(Deserialize, Debug)]
