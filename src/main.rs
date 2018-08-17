@@ -9,13 +9,11 @@ extern crate hyper_tls;
 
 
 mod core;
+mod crypto_service;
 
-
-
+use crypto_service::CryptoService;
 use futures::future::*;
 use futures::Stream;
-
-
 
 use hyper::{Body, Request, Response, Server, Method, service::Service};
 use hyper::rt::Future;
@@ -27,6 +25,7 @@ mod fb_auth_service;
 mod basic_auth_service;
 mod postgres_db;
 mod conversions;
+mod session_service;
 
 use settings::ApplicationSettings;
 use core::models::RawRequest;
@@ -35,7 +34,6 @@ use basic_auth_service::{BasicLoginRequest};
 use std::sync::{Arc, Mutex};
 use core::errors::AppError;
 use postgres_db::init_db;
-use postgres_db;
 
 type SharedSettings = Arc<Mutex<ApplicationSettings>>;
 
@@ -51,7 +49,7 @@ fn main() {
 
     let server = Server::bind(&addr)
         .serve(|| { service_fn(move |req| {
-                parse(req).and_then(|req| { route(req, app_settings.clone()) })
+                requests::parse(req).and_then(|req| { route(req, app_settings.clone()) })
             }) 
         })
         .map_err(|e| eprintln!("server AppError: {}", e));
@@ -71,12 +69,12 @@ fn route(req: RawRequest, settings: SharedSettings) -> impl Future<Item=Response
     (match (req.method, req.target.as_str(), req.body) {
         
         (Method::POST, "/login", body) => {
-            let req = BasicLoginRequest::from(body).unwrap();  
+            let req = BasicLoginRequest::from(body);
             helpers::create_basic_auth_service(settings).authorize(req) 
         },
 
         (Method::POST, "/login/fb", body) => {
-            let req = FBLoginRequest::from(body).unwrap();
+            let req = FBLoginRequest::from(body);
             println!("login {}", req.token);
             helpers::create_fb_auth_service(settings).authorize(req)
         },
@@ -93,18 +91,19 @@ fn route(req: RawRequest, settings: SharedSettings) -> impl Future<Item=Response
 }
 
 mod helpers {
-    
+    use session_service::RedisSessionService;
     use std::env;
     use basic_auth_service::BasicAuthService;
     use fb_auth_service::FbAuthService;
     use postgres_db::PostgresDb;
-    use settings::ApplicationSettings;
+    use settings::*;
     use hyper::{Response, Body, Error};
     use futures::future::{Future, err, ok};
     use core::errors::AppError;
     use core::models::Session;
     use super::session_service;
     use serde_json;
+    use super::crypto_service::CryptoService;
 
     pub fn resolve_settings_path() -> String {
         let args: Vec<String> = env::args().collect();
@@ -119,20 +118,22 @@ mod helpers {
         }
     }
     
-    pub fn create_basic_auth_service(settings: &ApplicationSettings) -> BasicAuthService {
+    pub fn create_basic_auth_service(app_settings: &ApplicationSettings) -> BasicAuthService {
         
-        let user_storage = Box::new(PostgresDb::new(settings));
+        let crypto_service = Box::new(CryptoService::new(&app_settings.password));
+        let user_storage = Box::new(PostgresDb::new(app_settings));
         
         
-        let password_storage = Box::new(PostgresDb::new(settings));
-        let session_service = redis_db::create_session_service(&settings.session);
+        let password_storage = Box::new(PostgresDb::new(app_settings));
+        let session_service = RedisSessionService::new(&app_settings.session);
 
         BasicAuthService::new(user_storage, password_storage, session_service)
     }
 
-    pub fn create_fb_auth_service(settings: &ApplicationSettings) -> FbAuthService {    
-        let user_storage = Box::new(PostgresDb::new(settings));
-        let session_service = RedisSessionService::new(&settings.session);
+    pub fn create_fb_auth_service(app_settings: &ApplicationSettings) -> FbAuthService {    
+        let crypto_service = Box::new(super::crypto_service::CryptoService::new(&app_settings.password));
+        let user_storage = Box::new(PostgresDb::new(app_settings, crypto_service));
+        let session_service = RedisSessionService::new(&app_settings.session);
 
         FbAuthService::new(user_storage, session_service)
     }

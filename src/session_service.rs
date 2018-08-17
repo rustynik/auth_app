@@ -1,38 +1,39 @@
-use uuid_service::UuidService;
-use core;
+extern crate redis;
+
+use self::redis::Commands;
+use core::traits::{MakeId, StoreSessions};
+use core::models::{Session, User};
+use core::errors::AppError;
+use settings::RedisSettings;
+use futures::future::{Future, ok, err};
 
 pub struct RedisSessionService {
-    uuid_maker::Box<core::MakeId>,
+    uuid_maker: Box<MakeId>,
     settings: RedisSettings
 }
 
 impl RedisSessionService {
-    pub fn new(settings: &RedisSettings, uuid_maker: Box<MakeId>) -> Self {
-        Self {
+    pub fn new(settings: &RedisSettings, uuid_maker: Box<MakeId>) -> RedisSessionService {
+        RedisSessionService {
             uuid_maker: uuid_maker,
             settings: settings.clone()
         }
     }
 }
 
-impl trait StoreSessions for RedisSessionService {
-    pub fn create_session(user: User) -> Future<Item=Session, Error=AppError> + Send {
-        let session_id = uuid_maker.make_id();
-
-        // store stuff in redis 
-
-        ok(Session {
-            id = session_id
-        })
+impl StoreSessions for RedisSessionService {
+    fn create_session(&self, user: User) -> Box<Future<Item=Session, Error=AppError> + Send> {
+        let session_id = self.uuid_maker.make_id();
+        let connection_string = &self.settings.connection_string[..];
+        let connection = redis::Client::open(connection_string);
+        .and_then(get_connection)
+        .and_then(|c| { c.set(user.id, session.id )}).unwrap();
+        done(Session { id : sessionId })
     }
 }
-fn create_session(user: User) -> Box<Future<Item=Session, Error=AppError> + Send> {
-    let session = Session { id: uuid::Uuid::new_v4().to_string() };
-    Box::new(match Connection::connect("postgres://postgres:1@localhost:5432/auth", TlsMode::None) {
-        Ok(conn) => match &conn.execute("INSERT into public.session (session_id, user_id) values($1,$2)", &[ &session.id, &user.id ]) {
-                Ok(_) => ok(session),
-                Err(error) => { println!("Pos1{}", error); err(AppError::ApplicationError) }
-            }
-            Err(error) => { println!("Pos2{}", error); err(AppError::ApplicationError) }
-    })
-} 
+
+impl From<redis::RedisError> for AppError {
+    fn from(error: redis::RedisError) -> AppError {
+        AppError::ApplicationError
+    }
+}

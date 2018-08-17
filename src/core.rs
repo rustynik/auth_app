@@ -5,25 +5,25 @@ pub  mod traits {
     use futures::future::Future;
 
     pub trait Crypto {
-        fn encrypt(password: &str) -> String;
+        fn encrypt_password(&self, password: &str) -> String;
     }
 
     pub trait ManagePasswords {
-        fn set_password(userId: &str, password: &str) -> Future<Item=(), Error=AppError> + Send;
-        fn check_password(userId: &str, password: &str) -> Future<Item=bool, Error=AppError> + Send;
+        fn set_password(&self, userId: &str, password: &str) -> Future<Item=(), Error=AppError> + Send;
+        fn check_password(&self, userId: &str, password: &str) -> Future<Item=bool, Error=AppError> + Send;
     }
 
     pub trait StoreUsers {
-        fn find_user_by_id(id: &str) -> Future<Item=Option<User>, Error=AppError> + Send;
-        fn insert_user(user: User) -> Future<Item=User, Error=AppError> + Send;
+        fn find_user_by_id(&self, id: &str) -> Future<Item=Option<User>, Error=AppError> + Send;
+        fn insert_user(&self, user: User) -> Future<Item=User, Error=AppError> + Send;
     }
 
     pub trait StoreSessions {
-        fn create_session(user: User) -> Future<Item=Session, Error=AppError> + Send;
+        fn create_session(&self, user: User) -> Box<Future<Item=Session, Error=AppError> + Send>;
     }
 
     pub trait MakeId {
-        fn make_id() -> String;
+        fn make_id(&self) -> String;
 
     }
 }
@@ -39,20 +39,22 @@ pub mod models {
 
     #[derive(Serialize, Deserialize)]   
     pub struct Session {
-        id: String
+        pub id: String
     }
 
     pub struct RawRequest {
-        method: Method,
-        target: String,
-        body: Vec<u8>
+        pub method: Method,
+        pub target: String,
+        pub body: Vec<u8>
     }   
 }
 
 pub mod errors {
     extern crate hyper;
     extern crate std;
+    
     use hyper::StatusCode;
+    use std::fmt::Debug;
 
     #[derive(Serialize, Deserialize)]
     pub enum AppError {

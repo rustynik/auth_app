@@ -10,15 +10,16 @@ use core::models::{Session, User};
 use hyper::{Client, Uri, Body, Response};
 use serde_json::from_slice;
 use hyper_tls::HttpsConnector;
+use super::requests::*;
 
 #[derive(Serialize, Deserialize)]
 pub struct FBLoginRequest {
-    token: String
+    pub token: String
 }
 
 impl From<Vec<u8>> for FBLoginRequest {
-    fn from(body: Vec<u8>) -> Result<FBLoginRequest, AppError> {
-        Ok(from_slice(&body).unwrap())
+    fn from(body: Vec<u8>) -> FBLoginRequest {
+        from_slice(&body).unwrap()
     }
 }
 
@@ -84,7 +85,7 @@ impl FbAuthService {
             .map_err(|err| AppError::ApplicationError)
             .and_then(|parsed| {
                 let fb_data : serde_json::Value = serde_json::from_slice(&parsed).unwrap();
-                ok(User { id: fb_data["id"].to_string(), email: fb_data["email"].to_string(), password: "s".to_string() })
+                ok(User { id: fb_data["id"].to_string(), name: fb_data["name"].to_string() })
             })
     }
 

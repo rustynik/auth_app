@@ -1,4 +1,9 @@
+extern crate hyper;
 
+use hyper::{Request, Body, Response, Error};
+use futures::future::{Future, ok};
+use core::models::RawRequest;
+use futures::Stream;
 
 pub fn parse(req: Request<Body>) -> impl Future<Item=RawRequest, Error=hyper::Error> {
     let method = req.method().clone();

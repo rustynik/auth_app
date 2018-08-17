@@ -14,7 +14,8 @@ use std::fs::File;
 pub struct ApplicationSettings {
     pub port: u16,
     pub password: CryptoSettings,
-    pub postgres: PostgresSettings 
+    pub postgres: PostgresSettings,
+    pub redis: RedisSettings
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -31,6 +32,12 @@ pub struct PostgresSettings {
     pub password: String,
     pub db_name: String,
     pub schema_name: String
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct RedisSettings {
+    pub connection_string: String,
+    pub session_ttl: usize
 }
 
 pub fn read(path : &str) -> ApplicationSettings {

@@ -20,8 +20,8 @@ pub struct BasicRegisterRequest {
 }
 
 impl From<Vec<u8>> for BasicLoginRequest {
-    fn from(body: Vec<u8>) -> Result<BasicLoginRequest, AppError> {
-        Ok(from_slice(&body).unwrap())
+    fn from(body: Vec<u8>) -> BasicLoginRequest {
+        from_slice(&body).unwrap()
     }
 }
 

@@ -5,7 +5,7 @@ use super::core::traits::{StoreUsers, ManagePasswords, Crypto};
 use super::core::models::User;
 use super::core::errors::AppError;
 use futures::future::{Future, err, ok};
-use postgres::{Connection, TlsMode};
+use self::postgres::{Connection, TlsMode};
 
 pub fn init_db(settings: &PostgresSettings) {
         // initializes a db with all necessary tables if it does not exist 
@@ -35,19 +35,19 @@ pub struct PostgresDb {
     }
 
 impl PostgresDb {
-    pub fn new(settings: &PostgresSettings) -> Self {
+    pub fn new(settings: &PostgresSettings, crypto_service: Box<Crypto>) -> Self {
         Self {
             uri: helpers::get_uri(settings),
             db_name: settings.db_name.clone(),
             schema: settings.schema.clone(),
-            crypto_service: Box<Crypto>
+            crypto_service: crypto_service
         }
     }
 }
 
 impl StoreUsers for PostgresDb {
         
-    fn find_user_by_id(&self, id: &str) -> Box<Future<Item=Option<User>, Error=AppError> + Send> {
+    fn find_user_by_id(&self, id: &str) -> Future<Item=Option<User>, Error=AppError> + Send {
             
         let cmdText = format!("SELECT id, name FROM {}.users where id = $1", &self.schema_name);
             
@@ -95,7 +95,7 @@ impl StoreUsers for PostgresDb {
 
 impl ManagePasswords for PostgresDb {
 
-    fn set_password(&self, user_id: &str, password: &str) -> Future<Item=(), Error=AppError> {
+    fn set_password(&self, user_id: &str, password: &str) -> Future<Item=(), Error=AppError> + Send {
         let hash = &self.crypto_service.encrypt_password(password);
 
         let cmdText = format!("insert into {}.passwords (user_id, password_hash) values($1, $2)", &self.schema_name);
@@ -111,7 +111,7 @@ impl ManagePasswords for PostgresDb {
         }
     }
 
-    fn check_password(&self, userId: &str, password: &str) -> Future<Item=bool, Error=AppError> {
+    fn check_password(&self, user_id: &str, password: &str) -> Future<Item=bool, Error=AppError> + Send {
         let hash = &self.crypto_service.encrypt_password(password);
 
         let cmdText = format!("select count(*) from {}.passwords where user_id = $1 and password_hash = $2", &self.schema_name);
