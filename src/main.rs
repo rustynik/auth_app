@@ -1,23 +1,20 @@
+#[macro_use]
+extern crate serde_derive;
+
 extern crate hyper;
 extern crate serde;
 extern crate serde_json;
 extern crate futures;
 extern crate hyper_tls;
-extern crate postgres;
-
-mod password_service;
-mod uuid_service;
 
 
-use postgres::{Connection, TlsMode, params::ConnectParams};
+mod core;
+
+
 
 use futures::future::*;
 use futures::Stream;
-use std::fmt::Debug;
-use hyper::StatusCode;
-use hyper::Uri;
-use hyper::Error;
-use hyper_tls::HttpsConnector;
+
 
 
 use hyper::{Body, Request, Response, Server, Method, service::Service};
@@ -25,25 +22,26 @@ use hyper::rt::Future;
 use hyper::service::service_fn;
 
 mod settings;
-mod resolve_settings;
 mod requests;
-mod errors;
 mod fb_auth_service;
 mod basic_auth_service;
+mod postgres_db;
+mod conversions;
 
 use settings::ApplicationSettings;
-use requests::{RawRequest, parse};
-use conversions;
+use core::models::RawRequest;
 use fb_auth_service::{FBLoginRequest};
 use basic_auth_service::{BasicLoginRequest};
 use std::sync::{Arc, Mutex};
-use errors::AppError;
+use core::errors::AppError;
+use postgres_db::init_db;
+use postgres_db;
 
 type SharedSettings = Arc<Mutex<ApplicationSettings>>;
 
 /// application entry point
 fn main() {
-    let app_settings = settings::read(&helpers::resolve_settings::resolve_settings_path());
+    let app_settings = settings::read(&helpers::resolve_settings_path());
     
     init_db(&app_settings.postgres);
 
@@ -87,8 +85,8 @@ fn route(req: RawRequest, settings: SharedSettings) -> impl Future<Item=Response
     })
     .then(|res| {
         match res {
-            Ok(session) => successful_login(session),
-            Err(error) => error_to_response(error)
+            Ok(session) => helpers::successful_login(session),
+            Err(error) => helpers::error_to_response(error)
         }
     })
     .from_err()
@@ -97,6 +95,16 @@ fn route(req: RawRequest, settings: SharedSettings) -> impl Future<Item=Response
 mod helpers {
     
     use std::env;
+    use basic_auth_service::BasicAuthService;
+    use fb_auth_service::FbAuthService;
+    use postgres_db::PostgresDb;
+    use settings::ApplicationSettings;
+    use hyper::{Response, Body, Error};
+    use futures::future::{Future, err, ok};
+    use core::errors::AppError;
+    use core::models::Session;
+    use super::session_service;
+    use serde_json;
 
     pub fn resolve_settings_path() -> String {
         let args: Vec<String> = env::args().collect();
@@ -111,18 +119,36 @@ mod helpers {
         }
     }
     
-    pub fn create_basic_auth_service(settings: &ApplicationSettings) => BasicAuthService {
-        let user_storage = postgres_db::create_user_storage(&settings.postgres);
-        let password_storage = postgres_db::create_password_storage(&settings.password);
+    pub fn create_basic_auth_service(settings: &ApplicationSettings) -> BasicAuthService {
+        
+        let user_storage = Box::new(PostgresDb::new(settings));
+        
+        
+        let password_storage = Box::new(PostgresDb::new(settings));
         let session_service = redis_db::create_session_service(&settings.session);
 
         BasicAuthService::new(user_storage, password_storage, session_service)
     }
 
     pub fn create_fb_auth_service(settings: &ApplicationSettings) -> FbAuthService {    
-        let user_storage = postgres_db::create_user_storage(&settings.postgres);
-        let session_service = redis_db::create_session_service(&settings.session);
+        let user_storage = Box::new(PostgresDb::new(settings));
+        let session_service = RedisSessionService::new(&settings.session);
 
         FbAuthService::new(user_storage, session_service)
+    }
+
+    pub fn error_to_response(error: AppError) -> Box<Future<Item=Response<Body>, Error=Error> + Send> {
+    Box::new(ok(Response::builder()
+    .status(error.to_status())
+    .body(Body::empty())
+    .unwrap()
+    ))
+}
+
+    pub fn successful_login(session: Session) -> Box<Future<Item=Response<Body>, Error=Error> + Send> {
+
+        Box::new(ok(Response::builder()
+        .status(200)
+        .body(Body::from(serde_json::to_string(&session).unwrap())).unwrap()))
     }
 }

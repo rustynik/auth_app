@@ -1,4 +1,9 @@
 pub  mod traits {
+    
+    use super::models::*;
+    use super::errors::AppError;
+    use futures::future::Future;
+
     pub trait Crypto {
         fn encrypt(password: &str) -> String;
     }
@@ -10,7 +15,7 @@ pub  mod traits {
 
     pub trait StoreUsers {
         fn find_user_by_id(id: &str) -> Future<Item=Option<User>, Error=AppError> + Send;
-        fn insert_user(user: User) -> impl Future<Item=User, Error=AppError> + Send
+        fn insert_user(user: User) -> Future<Item=User, Error=AppError> + Send;
     }
 
     pub trait StoreSessions {
@@ -24,7 +29,8 @@ pub  mod traits {
 }
 
 pub mod models {
-    
+    use hyper::Method;
+
     #[derive(Serialize, Deserialize)]   
     pub struct User {
         pub id: String,
@@ -44,6 +50,9 @@ pub mod models {
 }
 
 pub mod errors {
+    extern crate hyper;
+    extern crate std;
+    use hyper::StatusCode;
 
     #[derive(Serialize, Deserialize)]
     pub enum AppError {
@@ -53,35 +62,36 @@ pub mod errors {
         BadRequest
     }
 
-    impl AppError {
-        pub fn from(statusCode: hyper::StatusCode) -> AppError {
+    impl From<hyper::StatusCode> for AppError {
+        fn from(statusCode: hyper::StatusCode) -> AppError {
             match statusCode {
                 hyper::StatusCode::NOT_FOUND => AppError::RoutingError,
                 hyper::StatusCode::FORBIDDEN => AppError::Unauthorized,
                 _ => AppError::BadRequest
             }
         }
+    }
 
-        pub fn to_status(&self) -> StatusCode {
-            (match &self {
-                AppError::ApplicationError => StatusCode::from_u16(500),
-                AppError::RoutingError => StatusCode::from_u16(404),
-                AppError::Unauthorized => StatusCode::from_u16(403),
-                AppError::BadRequest => StatusCode::from_u16(400)
-            }).unwrap()
+    impl From<AppError> for hyper::Error {
+        fn from(error: AppError) -> Self {
+            panic!("I don't know what to do")
         }
     }
 
     impl Debug for AppError {
-            pub fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-                Ok(())
-            }
-        } 
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+            Ok(())
+        }
+    }
 
-        impl std::convert::From<AppError> for hyper::Error {
-            pub fn from(error: AppError) -> Self {
-                panic!("I don't know what to do")
-            }
+    impl AppError {
+        pub fn to_status(&self) -> StatusCode {
+            (match &self {
+                    AppError::ApplicationError => StatusCode::from_u16(500),
+                    AppError::RoutingError => StatusCode::from_u16(404),
+                    AppError::Unauthorized => StatusCode::from_u16(403),
+                    AppError::BadRequest => StatusCode::from_u16(400)
+                }).unwrap()
         }
     }
 }

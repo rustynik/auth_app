@@ -1,56 +1,48 @@
 extern crate serde_json;
+extern crate hyper;
+extern crate hyper_tls;
+extern crate futures;
 
-#[macro_use]
-extern crate serde_derive;
-
-use postgres_db;
-use password_service;
-use session_service;
+use futures::future::{Future, err, ok};
+use core::errors::AppError;
+use core::traits::{StoreSessions, StoreUsers};
+use core::models::{Session, User};
+use hyper::{Client, Uri, Body, Response};
 use serde_json::from_slice;
-
-const fb_url : &str = "https://graph.facebook.com/me?access_token={}";
+use hyper_tls::HttpsConnector;
 
 #[derive(Serialize, Deserialize)]
 pub struct FBLoginRequest {
     token: String
 }
 
-impl FBLoginRequest {
-    pub fn from(body: Vec<u8>) -> Result<FBLoginRequest, AppError> {
-        Ok(serde_json::from_slice(&body).unwrap())
+impl From<Vec<u8>> for FBLoginRequest {
+    fn from(body: Vec<u8>) -> Result<FBLoginRequest, AppError> {
+        Ok(from_slice(&body).unwrap())
     }
 }
 
-pub fn create_service(settings: &ApplicationSettings) -> FbAuthService {
-    
-    let db = postgres_db::create_service(settings);
-    let session_service = session_service::create_service(settings);
-
-    FbAuthService::new(db, session_service)
-}
-
-
 pub struct FbAuthService {
-    db: PostgresDb, 
-    session_service: SessionService
+    user_storage: Box<StoreUsers>, 
+    session_service: Box<StoreSessions>
 }
 
 impl FbAuthService {
-    fn new(db: PostgresDb, session_service: SessionService) -> Self {
+    fn new(user_storage: Box<StoreUsers>, session_service: Box<StoreSessions>) -> Self {
         Self {
-            db: db,
+            user_storage: user_storage,
             session_service: session_service
         }
     }
 
     pub fn authorize(&self, req: FBLoginRequest) -> Box<Future<Item=Session, Error=AppError> + Send> {
     
-        let url = format!(fb_url, req.token);
+        let url = format!("https://graph.facebook.com/me?access_token={}", req.token);
     
         match url.as_str().parse::<Uri>() {
             Ok(uri) => {
                 let https = HttpsConnector::new(4).unwrap();
-                let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+                let client = Client::builder().build::<_, Body>(https);
                 
                 println!("checking fb auth token, url: {}", uri);
 
@@ -65,8 +57,8 @@ impl FbAuthService {
                         } 
                         AppError::ApplicationError
                     })
-                    .and_then(check_status)
-                    .and_then(get_fb_user_data)
+                    .and_then(&self.check_status)
+                    .and_then(&self.get_fb_user_data)
                     .and_then(self.db.upsertUser)
                     .and_then(self.session_service.create_session) // this may probably be extracted to an upper level? 
                 )
@@ -78,7 +70,7 @@ impl FbAuthService {
         }
     }
 
-    fn check_status(resp: Response<Body>) -> impl Future<Item=Response<Body>, Error=AppError> + Send {
+    fn check_status(&self, resp: Response<Body>) -> impl Future<Item=Response<Body>, Error=AppError> + Send {
         println!("{}", resp.status());
         match resp.status() {
             hyper::StatusCode::OK => ok(resp),
@@ -86,7 +78,7 @@ impl FbAuthService {
         }
     }
 
-    fn get_fb_user_data(resp: Response<Body>) -> impl Future<Item=User, Error=AppError> + Send {
+    fn get_fb_user_data(&self, resp: Response<Body>) -> impl Future<Item=User, Error=AppError> + Send {
 
         convert_and_parse(resp)
             .map_err(|err| AppError::ApplicationError)

@@ -3,13 +3,13 @@
 // TODO: Use TOML?
 
 extern crate serde_json;
-extern crate serde_derive;
 
 use std::fs::File;
 
 
 /// application settings 
 /// TODO: this implementation is fixed and does not really provide for varying underlying services 
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApplicationSettings {
     pub port: u16,

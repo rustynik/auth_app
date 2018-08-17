@@ -1,8 +1,4 @@
-pub struct RawRequest {
-    method: Method,
-    target: String,
-    body: Vec<u8>
-}
+
 
 pub fn parse(req: Request<Body>) -> impl Future<Item=RawRequest, Error=hyper::Error> {
     let method = req.method().clone();
