@@ -1,25 +1,42 @@
+extern crate serde_json;
+
 #[macro_use]
 extern crate serde_derive;
 
-const fb_url = "https://graph.facebook.com/me?access_token={}";
+use postgres_db;
+use password_service;
+use session_service;
+use serde_json::from_slice;
+
+const fb_url : &str = "https://graph.facebook.com/me?access_token={}";
 
 #[derive(Serialize, Deserialize)]
 pub struct FBLoginRequest {
     token: String
 }
+
 impl FBLoginRequest {
     pub fn from(body: Vec<u8>) -> Result<FBLoginRequest, AppError> {
         Ok(serde_json::from_slice(&body).unwrap())
     }
 }
 
-pub struct FbAuthHandler {
+pub fn create_service(settings: &ApplicationSettings) -> FbAuthService {
+    
+    let db = postgres_db::create_service(settings);
+    let session_service = session_service::create_service(settings);
+
+    FbAuthService::new(db, session_service)
+}
+
+
+pub struct FbAuthService {
     db: PostgresDb, 
     session_service: SessionService
 }
 
-impl FbAuthHandler {
-    pub fn new(db: PostgresDb, session_service: SessionService) -> Self {
+impl FbAuthService {
+    fn new(db: PostgresDb, session_service: SessionService) -> Self {
         Self {
             db: db,
             session_service: session_service

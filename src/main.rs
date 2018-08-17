@@ -27,38 +27,62 @@ use hyper::service::service_fn;
 mod settings;
 mod resolve_settings;
 mod requests;
-mod conversions;
 mod errors;
-mod fb_auth_handler;
+mod fb_auth_service;
+mod basic_auth_service;
 
-use requests::*;
-use conversions::*;
+use settings::ApplicationSettings;
+use requests::{RawRequest, parse};
+use conversions;
+use fb_auth_service::{FBLoginRequest};
+use basic_auth_service::{BasicLoginRequest};
+use std::sync::{Arc, Mutex};
+use errors::AppError;
 
+type SharedSettings = Arc<Mutex<ApplicationSettings>>;
 
+/// application entry point
 fn main() {
-    let app_settings = settings::read(&resolve_settings::resolve_settings_path());
-    let addr = ([127, 0, 0, 1], app_settings.port).into();
+    let app_settings = settings::read(&helpers::resolve_settings::resolve_settings_path());
     
+    init_db(&app_settings.postgres);
+
+    let app_settings = Arc::new(Mutex::new(app_settings));
+
+    let addr = ([127, 0, 0, 1], app_settings.port).into();
+
     let server = Server::bind(&addr)
-    .serve(|| { service_fn(handler) })
-    .map_err(|e| eprintln!("server AppError: {}", e));
+        .serve(|| { service_fn(move |req| {
+                parse(req).and_then(|req| { route(req, app_settings.clone()) })
+            }) 
+        })
+        .map_err(|e| eprintln!("server AppError: {}", e));
 
     hyper::rt::run(server);
 }
 
-fn handler(req: Request<Body>) -> impl Future<Item=Response<Body>, Error=hyper::Error> {
-    parse(req)
-    .and_then(handle)
-}
-
- 
-
- 
-
-fn handle(req: RawRequest) -> impl Future<Item=Response<Body>, Error=hyper::Error> {
+/// route request to a handler 
+/// and respond by returning either a session or a http error status code
+fn route(req: RawRequest, settings: SharedSettings) -> impl Future<Item=Response<Body>, Error=hyper::Error> {
+    
+    let settings = &*(settings.lock().unwrap());
+    
+    // no router is required for this prototype server, but a more sophisticated implementation 
+    // would probably need a real router and an abstraction over the auth services
+    // to plugin with different request urls
     (match (req.method, req.target.as_str(), req.body) {
-        (Method::POST, "/login", body) => handle_basic_login(body),
-        (Method::POST, "/login/fb", body) => handle_fb_login(body),
+        
+        (Method::POST, "/login", body) => {
+            let req = BasicLoginRequest::from(body).unwrap();  
+            helpers::create_basic_auth_service(settings).authorize(req) 
+        },
+
+        (Method::POST, "/login/fb", body) => {
+            let req = FBLoginRequest::from(body).unwrap();
+            println!("login {}", req.token);
+            helpers::create_fb_auth_service(settings).authorize(req)
+        },
+
         _ => Box::new(err(AppError::RoutingError))
     })
     .then(|res| {
@@ -70,20 +94,35 @@ fn handle(req: RawRequest) -> impl Future<Item=Response<Body>, Error=hyper::Erro
     .from_err()
 }
 
+mod helpers {
+    
+    use std::env;
 
+    pub fn resolve_settings_path() -> String {
+        let args: Vec<String> = env::args().collect();
 
- 
+        match args.len() {
+            2 => args[1].to_owned(),
+            _ => {
+                let mut dir = env::current_exe().expect("Cannot get current directory");
+                dir.set_file_name("config.json");
+                dir.to_str().expect("Invalid path").to_owned()
+            }
+        }
+    }
+    
+    pub fn create_basic_auth_service(settings: &ApplicationSettings) => BasicAuthService {
+        let user_storage = postgres_db::create_user_storage(&settings.postgres);
+        let password_storage = postgres_db::create_password_storage(&settings.password);
+        let session_service = redis_db::create_session_service(&settings.session);
 
+        BasicAuthService::new(user_storage, password_storage, session_service)
+    }
 
+    pub fn create_fb_auth_service(settings: &ApplicationSettings) -> FbAuthService {    
+        let user_storage = postgres_db::create_user_storage(&settings.postgres);
+        let session_service = redis_db::create_session_service(&settings.session);
 
-fn handle_basic_login(body: Vec<u8>) -> Box<Future<Item=Session, Error=AppError> + Send> {
-    let basic_login_request = BasicLoginRequest::from(body).unwrap();
-    println!("login {} {}", basic_login_request.email, basic_login_request.password);
-    authorize_basic(basic_login_request)
-}
-
-fn handle_fb_login(body: Vec<u8>) -> Box<Future<Item=Session, Error=AppError> + Send> {
-    let req = FBLoginRequest::from(body).unwrap();
-    println!("login {}", req.token);
-    authorize_fb(req)
+        FbAuthService::new(user_storage, session_service)
+    }
 }

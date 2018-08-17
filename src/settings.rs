@@ -1,4 +1,6 @@
-// application settings and a method to read them from file at application start
+
+
+// TODO: Use TOML?
 
 extern crate serde_json;
 extern crate serde_derive;
@@ -6,20 +8,22 @@ extern crate serde_derive;
 use std::fs::File;
 
 
-#[derive(Deserialize, Debug)]
+/// application settings 
+/// TODO: this implementation is fixed and does not really provide for varying underlying services 
+#[derive(Deserialize, Debug, Clone)]
 pub struct ApplicationSettings {
     pub port: u16,
     pub password: CryptoSettings,
     pub postgres: PostgresSettings 
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CryptoSettings { 
     crypto_key: String,
     salt: String
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct PostgresSettings {
     pub host : String,
     pub port: String,

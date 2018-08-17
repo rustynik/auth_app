@@ -1,26 +1,35 @@
+extern create serde_json;
+
 #[macro_use]
 extern crate serde_derive;
 
+use postgres_db;
+use password_service;
+use session_service;
+use serde_json::from_slice;
+
 #[derive(Serialize, Deserialize)]
-struct BasicLoginRequest {
+pub struct BasicLoginRequest {
     email: String,
     password: String
 }
 
 impl BasicLoginRequest {
     fn from(body: Vec<u8>) -> Result<BasicLoginRequest, AppError> {
-        Ok(serde_json::from_slice(&body).unwrap())
+        Ok(from_slice(&body).unwrap())
     }
 }
 
-pub struct BasicAuthHandler {
+
+
+pub struct BasicAuthService {
     db: PostgresDb,
     password_service: PasswordService,
     session_service: SessionService
 }
 
-impl BasicAuthHandler {
-    pub fn new(db: PostgresDb, password_service: PasswordService) -> Self {
+impl BasicAuthService {
+    fn new(db: PostgresDb, password_service: PasswordService) -> Self {
         Self {
             db: PostgresDb,
             password_service: PasswordService,
@@ -28,10 +37,14 @@ impl BasicAuthHandler {
         }
     }
     
-    pub fn authorize_basic(&self.req: BasicLoginRequest) -> Box<Future<Item=Session, Error=AppError> + Send> {
+    pub fn authorize(&self, req: BasicLoginRequest) -> Box<Future<Item=Session, Error=AppError> + Send> {
         Box::new(self.db.find_user_by_email(&req.email)
             .and_then(move | user| { validate_password(user, req.password) }))
     }  
+
+    pub fn register(&self, req: BasicRegisterRequest) -> Box<Future<Item=User, Error=AppError> + Send> {
+        unimplemented!()
+    }
 
     fn validate_password(user: User, password: String) -> Box<Future<Item=Session, Error=AppError> + Send> {
         match password_service.check_password(&user.password, &password) {
