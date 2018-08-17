@@ -25,10 +25,10 @@ impl StoreSessions for RedisSessionService {
     fn create_session(&self, user: User) -> Box<Future<Item=Session, Error=AppError> + Send> {
         let session_id = self.uuid_maker.make_id();
         let connection_string = &self.settings.connection_string[..];
-        let connection = redis::Client::open(connection_string);
+        let connection = redis::Client::open(connection_string)
         .and_then(get_connection)
-        .and_then(|c| { c.set(user.id, session.id )}).unwrap();
-        done(Session { id : sessionId })
+        .and_then(|c| { c.set(user.id, session_id )}).unwrap();
+        Box::new(ok(Session { id : session_id }))
     }
 }
 

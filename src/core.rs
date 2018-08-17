@@ -9,13 +9,13 @@ pub  mod traits {
     }
 
     pub trait ManagePasswords {
-        fn set_password(&self, userId: &str, password: &str) -> Future<Item=(), Error=AppError> + Send;
-        fn check_password(&self, userId: &str, password: &str) -> Future<Item=bool, Error=AppError> + Send;
+        fn set_password(&self, userId: &str, password: &str) -> Box<Future<Item=(), Error=AppError> + Send>;
+        fn check_password(&self, userId: &str, password: &str) -> Box<Future<Item=bool, Error=AppError> + Send>;
     }
 
     pub trait StoreUsers {
-        fn find_user_by_id(&self, id: &str) -> Future<Item=Option<User>, Error=AppError> + Send;
-        fn insert_user(&self, user: User) -> Future<Item=User, Error=AppError> + Send;
+        fn find_user_by_id(&self, id: &str) -> Box<Future<Item=Option<User>, Error=AppError> + Send>;
+        fn insert_user(&self, user: User) -> Box<Future<Item=User, Error=AppError> + Send>;
     }
 
     pub trait StoreSessions {

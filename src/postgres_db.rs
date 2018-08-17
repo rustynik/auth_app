@@ -47,7 +47,7 @@ impl PostgresDb {
 
 impl StoreUsers for PostgresDb {
         
-    fn find_user_by_id(&self, id: &str) -> Future<Item=Option<User>, Error=AppError> + Send {
+    fn find_user_by_id(&self, id: &str) -> Box<Future<Item=Option<User>, Error=AppError> + Send> {
             
         let cmdText = format!("SELECT id, name FROM {}.users where id = $1", &self.schema_name);
             
@@ -76,12 +76,12 @@ impl StoreUsers for PostgresDb {
             })
     }
     
-    fn insert_user(&self, user: User) -> Future<Item=User, Error=AppError> + Send {
+    fn insert_user(&self, user: User) -> Box<Future<Item=User, Error=AppError> + Send> {
             
             // implementation relies on user id being primary key in the db
         let cmdText = format!("insert into {}.users id, name, password values($1, $2, $3)", &self.schema_name);
 
-        match Connection::connect(&self.uri, TlsMode::None) {
+        Box::new(match Connection::connect(&self.uri, TlsMode::None) {
             Ok(conn) => match &conn.execute(cmdText, &[ &user.id, &user.name, &user.password ]) {
                     Ok(_) => ok(user),
                     Err(error) => { 
@@ -89,18 +89,18 @@ impl StoreUsers for PostgresDb {
                         err(AppError::ApplicationError) 
                     }
             }
-        }
+        })
     }
 }
 
 impl ManagePasswords for PostgresDb {
 
-    fn set_password(&self, user_id: &str, password: &str) -> Future<Item=(), Error=AppError> + Send {
+    fn set_password(&self, user_id: &str, password: &str) -> Box<Future<Item=(), Error=AppError> + Send> {
         let hash = &self.crypto_service.encrypt_password(password);
 
         let cmdText = format!("insert into {}.passwords (user_id, password_hash) values($1, $2)", &self.schema_name);
 
-        match Connection::connect(&self.uri, TlsMode::None) {
+        Box::new(match Connection::connect(&self.uri, TlsMode::None) {
             Ok(conn) => match &conn.execute(cmdText, &[ user_id, &hash ]) {
                 Ok(_) => ok(()),
                 Err(error) => { 
@@ -108,15 +108,15 @@ impl ManagePasswords for PostgresDb {
                     err(AppError::ApplicationError) 
                 }
             }
-        }
+        })
     }
 
-    fn check_password(&self, user_id: &str, password: &str) -> Future<Item=bool, Error=AppError> + Send {
+    fn check_password(&self, user_id: &str, password: &str) -> Box<Future<Item=bool, Error=AppError> + Send> {
         let hash = &self.crypto_service.encrypt_password(password);
 
         let cmdText = format!("select count(*) from {}.passwords where user_id = $1 and password_hash = $2", &self.schema_name);
 
-        match Connection::connect(&self.uri, TlsMode::None) {
+        Box::new(match Connection::connect(&self.uri, TlsMode::None) {
             Ok(conn) => match &conn.execute_scalar(cmdText, &[ user_id, &hash ]) {
                 Ok(1) => ok(true),
                 Ok(_) => ok(false),
@@ -125,6 +125,6 @@ impl ManagePasswords for PostgresDb {
                     err(AppError::ApplicationError) 
                 }
             }
-        }
+        })
     }
 }
